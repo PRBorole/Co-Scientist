@@ -346,10 +346,15 @@ def serve(
     host: str | None = typer.Option(None, "--host"),
     port: int | None = typer.Option(None, "--port"),
 ) -> None:
-    """[M7+] Launch the FastAPI web UI."""
-    _ = ctx, host, port
-    console.print("[yellow]`serve` lands in M7.[/yellow]")
-    raise typer.Exit(2)
+    """Launch the FastAPI + htmx + SSE web UI."""
+    cfg, _ = ctx.obj
+    host = host or cfg.web_ui.host
+    port = port or cfg.web_ui.port
+    import uvicorn
+
+    from .web.app import create_app
+
+    uvicorn.run(create_app(cfg), host=host, port=port, log_level="info")
 
 
 @tools_app.command("list")

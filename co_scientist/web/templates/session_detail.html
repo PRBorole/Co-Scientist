@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Session {{ session.id[-12:] }} — AI Co-Scientist{% endblock %}
+{% block content %}
+<hgroup>
+    <h1>Session <code>{{ session.id[-12:] }}</code></h1>
+    <p><span class="status status-{{ session.status }}">{{ session.status }}</span>
+       — goal: {{ session.research_goal[:200] }}</p>
+</hgroup>
+
+<details>
+    <summary>Research plan</summary>
+    <pre>{{ session.research_plan.model_dump_json(indent=2) }}</pre>
+</details>
+
+<div class="grid">
+    <article>
+        <header><strong>Budget</strong></header>
+        <p>${{ "%.2f"|format(session.budget_used_usd) }} / ${{ "%.2f"|format(session.budget_usd) }}
+        ({{ "%.0f"|format(100 * session.budget_used_usd / session.budget_usd if session.budget_usd > 0 else 0) }}%)</p>
+        <progress value="{{ session.budget_used_usd }}" max="{{ session.budget_usd }}"></progress>
+    </article>
+    <article>
+        <header><strong>Tokens</strong></header>
+        <p>{{ session.budget_used_tokens }} / {{ session.budget_tokens }}</p>
+        <progress value="{{ session.budget_used_tokens }}" max="{{ session.budget_tokens }}"></progress>
+    </article>
+    <article>
+        <header><strong>API calls</strong></header>
+        <p>{{ usage.n_calls if usage else 0 }} total</p>
+        {% if usage and usage.cache_read %}
+        <small>Cache reads: {{ usage.cache_read }} tokens</small>
+        {% endif %}
+    </article>
+</div>
+
+<div class="grid">
+    <button hx-post="/api/sessions/{{ session.id }}/pause" hx-swap="none">Pause</button>
+    <button hx-post="/api/sessions/{{ session.id }}/resume" hx-swap="none" class="secondary">Resume</button>
+    <button hx-post="/api/sessions/{{ session.id }}/abort" hx-swap="none" hx-confirm="Abort this session?" class="contrast">Abort</button>
+    {% if session.final_overview %}
+        <a href="/sessions/{{ session.id }}/overview" role="button">View final overview →</a>
+    {% endif %}
+</div>
+
+<section>
+    <h2>Leaderboard ({{ hypotheses|length }})</h2>
+    {% if not hypotheses %}
+    <p><em>No hypotheses yet — agents are working.</em></p>
+    {% else %}
+    <table id="leaderboard">
+        <thead><tr><th>Elo</th><th>State</th><th>Title</th><th>Strategy</th><th>Matches</th></tr></thead>
+        <tbody>
+        {% for h in hypotheses %}
+        <tr>
+            <td>{% if h.elo %}{{ "%.0f"|format(h.elo) }}{% else %}—{% endif %}</td>
+            <td><span class="status status-{{ h.state }}">{{ h.state }}</span></td>
+            <td><a href="/sessions/{{ session.id }}/hypotheses/{{ h.id }}">{{ h.title or h.id }}</a></td>
+            <td><code>{{ h.strategy }}</code></td>
+            <td>{{ h.matches_played }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+</section>
+
+<section>
+    <h2>Recent matches</h2>
+    {% if not recent_matches %}
+    <p><em>No tournament matches yet.</em></p>
+    {% else %}
+    <ul id="matches-feed">
+    {% for m in recent_matches %}
+        <li><small>{{ m.created_at[11:19] }}</small>
+            <code>{{ m.hyp_a[-8:] }}</code> vs <code>{{ m.hyp_b[-8:] }}</code> ·
+            mode <code>{{ m.mode }}</code> · winner <strong>{{ m.winner or "?" }}</strong>
+            {% if m.elo_a_after %}
+            → {{ "%.0f"|format(m.elo_a_after) }} / {{ "%.0f"|format(m.elo_b_after) }}
+            {% endif %}
+        </li>
+    {% endfor %}
+    </ul>
+    {% endif %}
+</section>
+
+<section>
+    <h2>Feedback</h2>
+    <form method="POST" action="/api/sessions/{{ session.id }}/feedback"
+          hx-post="/api/sessions/{{ session.id }}/feedback" hx-swap="none">
+        <fieldset role="group">
+            <input type="text" name="text" placeholder="Add a directive, preference, or note" required>
+            <select name="kind">
+                <option value="directive">directive</option>
+                <option value="preference">preference</option>
+            </select>
+            <button type="submit">Send</button>
+        </fieldset>
+        <input type="hidden" name="target_id" value="">
+    </form>
+</section>
+
+<section>
+    <h3>Live events</h3>
+    <ul id="events-log" style="font-family:monospace;font-size:0.85em;max-height:14rem;overflow:auto"></ul>
+</section>
+
+<script>
+(function() {
+    const es = new EventSource("/api/sessions/{{ session.id }}/events");
+    const log = document.getElementById("events-log");
+    function push(name, payload) {
+        const li = document.createElement("li");
+        li.textContent = new Date().toISOString().substr(11, 8) + " " + name +
+                         " " + (payload ? JSON.stringify(payload).slice(0, 200) : "");
+        log.insertBefore(li, log.firstChild);
+        while (log.children.length > 80) log.removeChild(log.lastChild);
+    }
+    ["session_started","task_started","task_completed","task_failed",
+     "hypothesis_created","review_completed","match_complete",
+     "tournament_match_complete","session_done","human_feedback",
+     "session_paused","session_resumed","session_aborted"].forEach(name => {
+        es.addEventListener(name, e => {
+            try { push(name, JSON.parse(e.data)); }
+            catch { push(name, e.data); }
+        });
+    });
+    es.onerror = () => push("[sse error]", null);
+})();
+</script>
+{% endblock %}

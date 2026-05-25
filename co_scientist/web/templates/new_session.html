@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}New session — AI Co-Scientist{% endblock %}
+{% block content %}
+<h1>Start a new session</h1>
+<form method="POST" action="/sessions/new">
+    <label>Research goal
+        <textarea name="goal" rows="3" placeholder="Investigate plausible mechanisms by which X causes Y..."  required></textarea>
+    </label>
+    <label>Preferences (optional, free text)
+        <textarea name="preferences" rows="2" placeholder="prefer mechanistically specific, testable hypotheses"></textarea>
+    </label>
+    <div class="grid">
+        <label>Budget (USD)
+            <input type="number" name="budget_usd" step="0.5" min="1" value="{{ default_budget }}">
+        </label>
+        <label>Initial generations (parallel)
+            <input type="number" name="n_initial" min="1" max="10" value="3">
+        </label>
+        <label>Wall clock (s)
+            <input type="number" name="wall_clock_seconds" min="60" step="60" value="7200">
+        </label>
+    </div>
+    <button type="submit">Launch</button>
+    <a href="/" role="button" class="secondary">Cancel</a>
+</form>
+<p><small>The session runs in the same process as this UI. You'll be redirected back to the
+sessions list — it should appear at the top within a few seconds.</small></p>
+{% endblock %}

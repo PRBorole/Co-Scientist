@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Overview — {{ session.id[-12:] }}{% endblock %}
+{% block content %}
+<nav aria-label="breadcrumb">
+    <ul>
+        <li><a href="/">Sessions</a></li>
+        <li><a href="/sessions/{{ session.id }}">{{ session.id[-12:] }}</a></li>
+        <li>overview</li>
+    </ul>
+</nav>
+<details>
+    <summary>Raw markdown</summary>
+    <pre>{{ overview_md }}</pre>
+</details>
+<article>
+    {{ overview_html | safe }}
+</article>
+{% endblock %}
