@@ -98,6 +98,35 @@ async def test_init_tournament_only_runs_once(conn) -> None:
 
 
 @pytest.mark.asyncio
+async def test_set_state_if_only_applies_when_expected(conn) -> None:
+    """set_state_if must only transition from one of the expected source states."""
+    s = await _make_session(conn)
+    hid = ids.hypothesis_id(s.id, "generation/literature", "h-state")
+    await hyp_repo.insert(conn, Hypothesis(
+        id=hid, session_id=s.id, created_at=_now(),
+        created_by="generation", strategy="literature",
+        title="t", summary="s", full_text="f",
+        artifact_path=f"artifacts/{s.id}/hypotheses/{hid}.json", state="draft",
+    ))
+    # draft → reviewed: allowed
+    applied = await hyp_repo.set_state_if(
+        conn, hid, new_state="reviewed", expected_states=("draft",)
+    )
+    assert applied is True
+
+    # Promote past reflection into the tournament.
+    await hyp_repo.init_tournament(conn, hid, initial_elo=1200)
+
+    # Reflection re-fires: must NOT drag in_tournament → reviewed.
+    applied2 = await hyp_repo.set_state_if(
+        conn, hid, new_state="reviewed", expected_states=("draft",)
+    )
+    assert applied2 is False
+    h = await hyp_repo.fetch(conn, hid)
+    assert h is not None and h.state == "in_tournament"
+
+
+@pytest.mark.asyncio
 async def test_review_id_iteration_collision_blocked(conn) -> None:
     s = await _make_session(conn)
     hid = ids.hypothesis_id(s.id, "generation/literature", "h")

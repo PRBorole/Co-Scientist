@@ -104,6 +104,29 @@ async def set_state(conn: aiosqlite.Connection, hypothesis_id: str, state: str) 
     await conn.commit()
 
 
+async def set_state_if(
+    conn: aiosqlite.Connection,
+    hypothesis_id: str,
+    *,
+    new_state: str,
+    expected_states: tuple[str, ...],
+) -> bool:
+    """Conditional state transition. Returns True if applied.
+
+    Used to keep agents from clobbering a downstream state — e.g. Reflection
+    re-running on an already-`in_tournament` hypothesis must not drag it
+    back to `reviewed`.
+    """
+    placeholders = ",".join("?" for _ in expected_states)
+    cur = await conn.execute(
+        f"UPDATE hypotheses SET state=? WHERE id=? AND state IN ({placeholders})",
+        (new_state, hypothesis_id, *expected_states),
+    )
+    changed = cur.rowcount > 0
+    await conn.commit()
+    return changed
+
+
 async def init_tournament(
     conn: aiosqlite.Connection, hypothesis_id: str, initial_elo: float = 1200.0
 ) -> bool:

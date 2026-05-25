@@ -128,7 +128,11 @@ class ReflectionAgent(BaseAgent):
             artifact_path=artifact_path,
         )
         await rev_repo.insert(self.deps.db, review)
-        await hyp_repo.set_state(self.deps.db, h.id, "reviewed")
+        # Only promote draft → reviewed. If Reflection re-fires on an
+        # already-ranked/evolved/pinned hypothesis we must not drag it back.
+        await hyp_repo.set_state_if(
+            self.deps.db, h.id, new_state="reviewed", expected_states=("draft",),
+        )
 
         return TaskResult(
             kind="review_completed",

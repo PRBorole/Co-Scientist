@@ -31,6 +31,19 @@ def test_parse_better_idea_returns_none_when_missing() -> None:
     assert _parse_better_idea("") is None
 
 
+def test_parse_better_idea_handles_qualifier_words() -> None:
+    """Regression: the prior 'in tail.split()[0:1]' check rejected these."""
+    assert _parse_better_idea("better idea: option 1") == 1
+    assert _parse_better_idea("better idea: hypothesis 2") == 2
+    assert _parse_better_idea("better idea: hyp 1") == 1
+
+
+def test_parse_better_idea_word_boundary_excludes_12() -> None:
+    """'better idea: 12 because...' must NOT be read as '1'."""
+    # `12` should not match `[12]\b`.
+    assert _parse_better_idea("better idea: 12 because of context") is None
+
+
 # ----------------------------- mode selection ----------------------------- #
 
 def _h(*, elo: float, matches: int, hid: str = "hyp_x") -> Hypothesis:

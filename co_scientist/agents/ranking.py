@@ -13,6 +13,7 @@ otherwise.
 from __future__ import annotations
 
 import random
+import re
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -352,8 +353,19 @@ class RankingAgent(BaseAgent):
         return rs_sorted[0].body
 
 
+_VERDICT_DIGIT_RE = re.compile(r"^[\W_]*\**\s*([12])\b")
+
+
 def _parse_better_idea(text: str) -> int | None:
-    """Find the trailing 'better idea: 1|2' marker (case-insensitive, any line)."""
+    """Find the trailing 'better idea: 1|2' marker (case-insensitive, any line).
+
+    The previous implementation used `"1" in tail.split()[0:1]`, which is
+    `True` only when the first whitespace-token *equals* "1" exactly. That
+    rejected valid replies like 'better idea: option 1' or 'better idea: **1
+    because...'. The regex anchors at the start and matches the first 1 or 2
+    as a word boundary so we accept all those forms while still rejecting
+    'better idea: 12' (which the boundary check excludes).
+    """
     if not text:
         return None
     lines = text.strip().splitlines()
@@ -361,8 +373,14 @@ def _parse_better_idea(text: str) -> int | None:
         low = line.strip().lower()
         if "better idea" in low and ":" in low:
             tail = low.split(":", 1)[1].strip()
-            if tail.startswith("1") or tail.startswith("**1") or "1" in tail.split()[0:1]:
-                return 1
-            if tail.startswith("2") or tail.startswith("**2") or "2" in tail.split()[0:1]:
-                return 2
+            m = _VERDICT_DIGIT_RE.match(tail)
+            if m:
+                return int(m.group(1))
+            # Common phrasing: "option 1", "hypothesis 1", "hyp 1"
+            for keyword in ("option", "hypothesis", "hyp"):
+                if tail.startswith(keyword):
+                    rest = tail[len(keyword):].lstrip()
+                    m2 = _VERDICT_DIGIT_RE.match(rest)
+                    if m2:
+                        return int(m2.group(1))
     return None

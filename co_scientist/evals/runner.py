@@ -2,7 +2,11 @@
 
 Layout:
     co_scientist/evals/fixtures/<agent>.jsonl   — one fixture per line
-    each fixture: {"id": "...", "candidate": "...", "expected_artifacts": {...}}
+    each fixture: {"id": "...", "candidate": "...", "expected": {...}}
+
+`expected` is a dict of structural assertions:
+- must_contain: list[str]
+- must_cite_at_least: int (reflection only)
 
 Run:
     co-scientist eval <agent>             — score all fixtures with the judge
@@ -73,10 +77,23 @@ def _iter_fixtures(agent: str) -> list[dict[str, Any]]:
     if not p.exists():
         return []
     out: list[dict[str, Any]] = []
-    for line in p.read_text().splitlines():
-        line = line.strip()
-        if line and not line.startswith("#"):
-            out.append(json.loads(line))
+    for lineno, raw in enumerate(p.read_text().splitlines(), start=1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        try:
+            parsed = json.loads(line)
+        except json.JSONDecodeError as e:
+            # A single malformed fixture must not abort the whole run.
+            log.warning(
+                "eval_fixture_parse_failed",
+                path=str(p), line=lineno, err=str(e),
+            )
+            continue
+        if not isinstance(parsed, dict):
+            log.warning("eval_fixture_not_dict", path=str(p), line=lineno)
+            continue
+        out.append(parsed)
     return out
 
 
