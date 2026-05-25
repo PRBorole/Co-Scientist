@@ -67,3 +67,43 @@ async def test_unsubscribe_via_aclosing() -> None:
     await bus.publish("ses_x", "hello", {})
     await asyncio.wait_for(task, timeout=2.0)
     assert bus.subscriber_count("ses_x") == 0
+
+
+@pytest.mark.asyncio
+async def test_publish_never_blocks_on_a_stuck_subscriber() -> None:
+    """A subscriber that never drains its queue must not block the bus.
+
+    Regression test: a previous implementation used `await q.put(ev)` after a
+    `qsize()` check, which could still block if the queue filled between the
+    check and the put. The fix uses `put_nowait` with a drop-oldest policy.
+    """
+    import contextlib
+
+    bus = EventBus(max_buffer=4)
+
+    # `subscribe()` registers its queue inside the generator body. We need to
+    # drive __anext__ once so the queue exists, then cancel that task so the
+    # queue is never drained.
+    sub_gen = bus.subscribe("ses_z")
+    pull_task = asyncio.create_task(sub_gen.__anext__())
+    # Yield so subscribe() can register
+    for _ in range(10):
+        if bus.subscriber_count("ses_z") >= 1:
+            break
+        await asyncio.sleep(0.01)
+    assert bus.subscriber_count("ses_z") == 1
+
+    # Drain the first event ourselves so pull_task returns; from now on the
+    # queue accumulates with no reader.
+    await bus.publish("ses_z", "warmup", {})
+    await asyncio.wait_for(pull_task, timeout=0.5)
+
+    # Now publish far more than max_buffer; each call must return promptly.
+    for i in range(50):
+        await asyncio.wait_for(
+            bus.publish("ses_z", "noisy", {"i": i}), timeout=0.25
+        )
+
+    # Clean up by closing the generator.
+    with contextlib.suppress(Exception):
+        await sub_gen.aclose()

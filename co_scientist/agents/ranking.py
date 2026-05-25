@@ -97,9 +97,15 @@ class RankingAgent(BaseAgent):
         verdict, rationale, transcript_id = await self._run_debate(
             session, hyp_a, hyp_b, mode=mode
         )
+        # Derive the round_id deterministically from the task id so that a
+        # crash-then-retry computes the *same* match_id. `apply_elo_update`
+        # below is idempotent on `match_id` — a non-deterministic round_id
+        # (e.g. a wall-clock timestamp) defeats that and would double-apply
+        # the Elo delta on retry.
+        round_id = task.id
         if verdict is None:
             # Parsing failed — record an invalid match and don't update Elo.
-            mid_invalid = ids.match_id(hyp_a.id, hyp_b.id, _round_id_now())
+            mid_invalid = ids.match_id(hyp_a.id, hyp_b.id, round_id)
             await tourney_repo.insert_match(self.deps.db, TournamentMatch(
                 id=mid_invalid, session_id=session.id,
                 created_at=datetime.now(UTC),
@@ -121,7 +127,7 @@ class RankingAgent(BaseAgent):
             k_warm=self.deps.cfg.ranking.k_factor_warm,
         )
 
-        mid = ids.match_id(hyp_a.id, hyp_b.id, _round_id_now())
+        mid = ids.match_id(hyp_a.id, hyp_b.id, round_id)
         await tourney_repo.insert_match(self.deps.db, TournamentMatch(
             id=mid, session_id=session.id,
             created_at=datetime.now(UTC),
@@ -344,10 +350,6 @@ class RankingAgent(BaseAgent):
         # Prefer 'full' kind if present.
         rs_sorted = sorted(rs, key=lambda r: (r.kind != "full", -(r.scores.novelty or 0)))
         return rs_sorted[0].body
-
-
-def _round_id_now() -> str:
-    return datetime.now(UTC).strftime("%Y%m%dT%H%M%S%f")
 
 
 def _parse_better_idea(text: str) -> int | None:

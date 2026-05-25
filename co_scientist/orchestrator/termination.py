@@ -24,6 +24,7 @@ class StopReason(Enum):
     WALL_CLOCK = "wall_clock"
     ELO_STABLE = "elo_stable"
     EXTERNAL = "external"      # user pressed pause/abort or invoked /sessions/{id}/abort
+    IDLE = "idle"              # queue drained and decide_next_steps returned 0
 
 
 @dataclass

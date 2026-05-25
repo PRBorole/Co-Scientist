@@ -42,11 +42,17 @@ class EventBus:
         async with self._lock:
             queues = list(self._subs.get(session_id, ()))
         for q in queues:
-            # drop oldest if full so a slow subscriber can't block the bus
-            if q.qsize() >= self._max_buffer:
+            # Never await on a slow subscriber. A stuck SSE client could
+            # otherwise block the entire supervisor loop indefinitely.
+            # Drop policy: pop oldest until there is room, then put_nowait;
+            # if `put_nowait` still fails (e.g. queue concurrently filled
+            # between the pop and the put), drop this event for this
+            # subscriber and continue.
+            while q.qsize() >= self._max_buffer:
                 with contextlib.suppress(asyncio.QueueEmpty):
                     q.get_nowait()
-            await q.put(ev)
+            with contextlib.suppress(asyncio.QueueFull):
+                q.put_nowait(ev)
 
     async def subscribe(self, session_id: str) -> AsyncIterator[Event]:
         """Yield published events for `session_id`.

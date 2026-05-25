@@ -334,7 +334,7 @@ class Supervisor:
                             scheduled = await self._decide_next_steps(conn, session)
                             if scheduled == 0:
                                 # truly idle and no progress possible — exit gracefully
-                                return None
+                                return StopReason.IDLE
                             continue
                         # Wait briefly so we don't spin
                         await asyncio.sleep(1.0)
@@ -423,6 +423,13 @@ class Supervisor:
 
         enqueued = 0
 
+        # We anchor idle-refinement idempotency keys on the current match count
+        # rather than a fresh task id. Otherwise every idle pass — which can
+        # fire every ~10s — would enqueue a *new* tournament/evolution task
+        # even when a prior one is still pending, flooding the queue and
+        # double-counting work toward the budget.
+        anchor_mc = await tourney_repo.count_matches(conn, session.id)
+
         # Always: one tournament batch to keep refining Elo.
         in_tournament = await hyp_repo.list_for_session(
             conn, session.id, state="in_tournament"
@@ -434,7 +441,7 @@ class Supervisor:
                 agent="ranking", action="RunTournamentBatch",
                 target_id=None, payload={},
                 priority=150, status="pending",
-                idempotency_key=f"{session.id}::ranking::idle::{ids.task_id()}",
+                idempotency_key=f"{session.id}::ranking::idle::{anchor_mc}",
             ))
             enqueued += 1
 
@@ -448,7 +455,7 @@ class Supervisor:
                 target_id=None,
                 payload={"top_k": 5, "strategies": ["combine", "simplify", "out_of_box"]},
                 priority=140, status="pending",
-                idempotency_key=f"{session.id}::evolution::idle::{ids.task_id()}",
+                idempotency_key=f"{session.id}::evolution::idle::{anchor_mc}",
             ))
             enqueued += 1
 
@@ -517,6 +524,15 @@ class Supervisor:
         except ImportError:
             overview_path = await self._write_simple_overview(conn, session)
             await sess_repo.set_final_overview(conn, session.id, overview_path)
+
+        # `set_final_overview` flips status to 'done' atomically. If the
+        # overview path was never set (e.g. metareview crashed and the simple
+        # overview also failed) the status is still 'running'; force-set it
+        # here so the session doesn't appear to be running forever after exit.
+        # For EXTERNAL stops we don't overwrite the user-set 'paused' /
+        # 'aborted' status.
+        if stop_reason != StopReason.EXTERNAL:
+            await sess_repo.set_status(conn, session.id, "done")
 
         await self._emit(conn, session.id, "session_done",
                          {"stop_reason": stop_reason.value if stop_reason else None})

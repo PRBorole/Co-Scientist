@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 
 import faiss
 import numpy as np
@@ -27,6 +28,11 @@ class FaissStore:
         self._index_path = self._dir / "index.faiss"
         self._meta_path = self._dir / "index.meta.json"
         self._ordered_ids: list[str] = []   # hypothesis_id at each faiss offset
+        # FAISS itself is not thread-safe. Even though our `to_thread` calls
+        # serialize on the asyncio loop, they spawn into the default thread
+        # pool — multiple coroutines calling `add` / `search` / `save`
+        # concurrently can land on different threads and corrupt the index.
+        self._lock = asyncio.Lock()
 
     # ------------------------- lifecycle -------------------------------- #
 
@@ -45,13 +51,23 @@ class FaissStore:
     async def save(self) -> None:
         assert self.index is not None
 
+        # Write to *.tmp then os.replace so a crash mid-write doesn't leave a
+        # corrupted index file behind. Write meta first, then index, then
+        # rename both: if we crash between renames the meta will reflect the
+        # *old* index (which is what load_or_create expects).
+        idx_tmp = self._index_path.with_suffix(self._index_path.suffix + ".tmp")
+        meta_tmp = self._meta_path.with_suffix(self._meta_path.suffix + ".tmp")
+
         def _do() -> None:
-            faiss.write_index(self.index, str(self._index_path))
-            self._meta_path.write_text(
+            faiss.write_index(self.index, str(idx_tmp))
+            meta_tmp.write_text(
                 json.dumps({"dim": self.dim, "ordered_ids": self._ordered_ids})
             )
+            os.replace(idx_tmp, self._index_path)
+            os.replace(meta_tmp, self._meta_path)
 
-        await asyncio.to_thread(_do)
+        async with self._lock:
+            await asyncio.to_thread(_do)
 
     # ------------------------- ops -------------------------------------- #
 
@@ -64,13 +80,15 @@ class FaissStore:
         assert self.index is not None
         if vec.ndim == 1:
             vec = vec[None, :]
-        offset = self.n
 
-        def _do() -> None:
+        def _do() -> int:
+            off = self.index.ntotal
             self.index.add(vec.astype("float32"))
+            return off
 
-        await asyncio.to_thread(_do)
-        self._ordered_ids.append(hypothesis_id)
+        async with self._lock:
+            offset = await asyncio.to_thread(_do)
+            self._ordered_ids.append(hypothesis_id)
         return offset
 
     async def search(
@@ -85,18 +103,20 @@ class FaissStore:
             return []
         if query.ndim == 1:
             query = query[None, :]
-        k = min(k, self.n)
 
-        def _do() -> tuple[np.ndarray, np.ndarray]:
-            dists, idxs = self.index.search(query.astype("float32"), k)
+        def _do(qk: int) -> tuple[np.ndarray, np.ndarray]:
+            dists, idxs = self.index.search(query.astype("float32"), qk)
             return dists, idxs
 
-        dists, idxs = await asyncio.to_thread(_do)
+        async with self._lock:
+            k = min(k, self.n)
+            dists, idxs = await asyncio.to_thread(_do, k)
+            ordered = list(self._ordered_ids)
         out: list[tuple[str, float]] = []
         for sim, idx in zip(dists[0], idxs[0], strict=True):
-            if idx < 0 or idx >= len(self._ordered_ids):
+            if idx < 0 or idx >= len(ordered):
                 continue
-            out.append((self._ordered_ids[int(idx)], float(sim)))
+            out.append((ordered[int(idx)], float(sim)))
         return out
 
     async def cosine_matrix(self) -> np.ndarray:
@@ -109,7 +129,8 @@ class FaissStore:
             vecs = self.index.reconstruct_n(0, self.n)
             return vecs @ vecs.T
 
-        return await asyncio.to_thread(_do)
+        async with self._lock:
+            return await asyncio.to_thread(_do)
 
     def offset_of(self, hypothesis_id: str) -> int | None:
         try:
