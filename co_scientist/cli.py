@@ -435,6 +435,17 @@ def bench_cmd(
         None, "--judge",
         help="Judge as provider:model. Defaults to the preset's suggestion, else anthropic:claude-sonnet-4-6.",
     ),
+    goldset_label: str | None = typer.Option(
+        None, "--goldset",
+        help=(
+            "Override the preset's gold set, or attach one to a custom-"
+            "candidate bench. Built-in labels: 'aml-repurposing-paper-5' "
+            "(broader 5-drug list) and 'aml-repurposing-paper-top3' "
+            "(strict no-prior-evidence ranked top-3). Pass 'none' to "
+            "disable gold-set scoring entirely for a preset that defaults "
+            "to one."
+        ),
+    ),
     budget_per_candidate: float = typer.Option(
         2.0, "--budget-per-candidate", help="USD cap per candidate."
     ),
@@ -478,9 +489,6 @@ def bench_cmd(
         for c in candidates:
             mode_suffix = f" [{c.mode}]" if c.mode != "pipeline" else ""
             console.print(f"[dim]  • {c.label}{mode_suffix}: {c.provider}:{c.model}[/dim]")
-        if goldset:
-            ent_list = ", ".join(e.name for e in goldset.entities)
-            console.print(f"[dim]  gold set: {goldset.label} ({ent_list})[/dim]")
     else:
         if not candidate:
             console.print(
@@ -510,6 +518,27 @@ def bench_cmd(
             candidates.append(BenchCandidate(
                 label=label, provider=provider, model=model, mode=mode,
             ))
+
+    # --goldset override: take effect after preset defaults so users can
+    # swap the gold set without rewriting --candidate lists, or attach a
+    # gold set to a custom-candidate bench.
+    if goldset_label is not None:
+        from .bench import GOLDSETS
+        if goldset_label.lower() == "none":
+            goldset = None
+        elif goldset_label in GOLDSETS:
+            goldset = GOLDSETS[goldset_label]
+        else:
+            names = ", ".join(sorted(GOLDSETS))
+            console.print(
+                f"[red]unknown gold set {goldset_label!r}. "
+                f"Available: {names}, or 'none'.[/red]"
+            )
+            raise typer.Exit(2)
+
+    if goldset:
+        ent_list = ", ".join(e.name for e in goldset.entities)
+        console.print(f"[dim]  gold set: {goldset.label} ({ent_list})[/dim]")
 
     if goal is None:
         console.print(

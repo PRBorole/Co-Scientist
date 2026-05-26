@@ -165,16 +165,34 @@ def score_candidate_against_goldset(
 # Curated gold sets
 
 
-# The 5 drug-repurposing candidates the Co-Scientist paper surfaced for AML.
-# We attach common aliases / generic synonyms so models that name the drug
-# class (e.g. "MEK inhibitor") still count. We are conservative: matching
-# a class label alone is NOT a hit; we require the actual drug name OR a
-# brand/INN.
+# The Co-Scientist paper ships *two* AML drug-repurposing results from
+# different methodologies. We keep both so users can compare bench output
+# against either reference, and so historical bench artifacts that scored
+# against the old gold set remain interpretable.
+#
+# AML_REPURPOSING_PAPER_5
+#   The broader 5-drug list referenced in the paper's main text. These
+#   are well-known repurposing candidates, several of which had prior
+#   preclinical evidence in AML or related leukemias.
+#
+# AML_REPURPOSING_PAPER_TOP3
+#   The top-3 of a *ranked* list produced under a stricter methodology:
+#   candidates with no prior published AML repurposing AND no prior
+#   preclinical evidence in AML; the system was given no external inputs
+#   (no DepMap dependency scores, no human expert feedback).
+#
+# Past bench results record which gold set they scored against via
+# `bench_runs.goldset_label`. SELECT goldset_label, created_at, id FROM
+# bench_runs WHERE research_goal LIKE '%AML%' will list both vintages.
+
 AML_REPURPOSING_PAPER_5 = GoldSet(
     label="aml-repurposing-paper-5",
     description=(
-        "Five drug-repurposing candidates identified in the Co-Scientist "
-        "paper as promising for AML."
+        "Broader 5-drug AML repurposing list referenced in the paper's main "
+        "text. Includes well-known candidates, some with prior preclinical "
+        "evidence in AML. Use this gold set to score against the broader "
+        "result. For the strict no-prior-evidence top-3 ranked list use "
+        "aml-repurposing-paper-top3."
     ),
     entities=[
         GoldEntity(
@@ -202,6 +220,42 @@ AML_REPURPOSING_PAPER_5 = GoldSet(
 )
 
 
+AML_REPURPOSING_PAPER_TOP3 = GoldSet(
+    label="aml-repurposing-paper-top3",
+    description=(
+        "Top-3 of the Co-Scientist paper's ranked AML repurposing list under "
+        "the strict methodology: no prior published AML repurposing, no "
+        "prior preclinical evidence in AML, no external inputs (no DepMap "
+        "scores, no human expert feedback)."
+    ),
+    entities=[
+        GoldEntity(
+            name="Nanvuranlat",
+            # JPH-203 / JPH203 is the development code used in much of the
+            # early SLC7A5/LAT1 inhibitor literature.
+            aliases=("JPH-203", "JPH203", "KYT-0353"),
+        ),
+        GoldEntity(
+            name="KIRA6",
+            # KIRA6 has no brand or INN — it's a research-tool IRE1-alpha
+            # kinase-inhibiting RNase attenuator. "Kinase-inhibiting RNase
+            # attenuator 6" is the spelled-out name but rarely used.
+            aliases=(),
+        ),
+        GoldEntity(
+            name="Leflunomide",
+            # Arava is the brand. HWA-486 is the development code.
+            # Teriflunomide is the active metabolite (and a drug on its own
+            # under brand Aubagio); we accept it because the proposed AML
+            # mechanism is identical (DHODH inhibition).
+            aliases=("Arava", "HWA-486", "HWA486", "SU101",
+                     "Teriflunomide", "Aubagio"),
+        ),
+    ],
+)
+
+
 GOLDSETS: dict[str, GoldSet] = {
     AML_REPURPOSING_PAPER_5.label: AML_REPURPOSING_PAPER_5,
+    AML_REPURPOSING_PAPER_TOP3.label: AML_REPURPOSING_PAPER_TOP3,
 }

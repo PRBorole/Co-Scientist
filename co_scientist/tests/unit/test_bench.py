@@ -63,13 +63,15 @@ def test_paper_aml_preset_bundles_goal_and_goldset() -> None:
     p = get_preset("paper-aml")
     assert p.default_goal is not None
     assert "AML" in p.default_goal or "acute myeloid leukemia" in p.default_goal.lower()
+    # The strict methodology constraints should be in the prompt.
+    g = p.default_goal.lower()
+    assert "prior" in g and "preclinical" in g  # no prior evidence in AML
+    assert "depmap" in g                         # no external inputs
+    assert "ranked" in g                          # produces a ranked list
     assert p.goldset is not None
     entity_names = {e.name for e in p.goldset.entities}
-    # The five drugs the paper surfaced.
-    assert entity_names == {
-        "Binimetinib", "Pacritinib", "Cerivastatin", "Pravastatin",
-        "Dimethyl fumarate",
-    }
+    # The top-3 the paper ranked under no-prior-evidence methodology.
+    assert entity_names == {"Nanvuranlat", "KIRA6", "Leflunomide"}
 
 
 def test_vs_raw_preset_doubles_every_candidate() -> None:

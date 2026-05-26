@@ -34,7 +34,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .goldset import AML_REPURPOSING_PAPER_5, GoldSet
+from .goldset import AML_REPURPOSING_PAPER_TOP3, GoldSet
 from .runner import BenchCandidate
 
 
@@ -74,18 +74,37 @@ _PAPER_CANDIDATES: tuple[BenchCandidate, ...] = (
 )
 
 
-# The AML drug-repurposing goal mirrors how the Co-Scientist paper framed
-# the task: ask for FDA-approved drugs that could be repurposed for AML.
-# We add a couple of light preferences so models output drug NAMES rather
-# than drug classes or biomarkers — without those, weaker models often
-# default to "MEK inhibitors" or "JAK pathway modulators".
+# The AML drug-repurposing goal mirrors the exact methodology in the
+# Co-Scientist paper:
+#   - Ranked list of repurposing candidates for AML.
+#   - Candidates must NOT have been previously repurposed for AML.
+#   - There must be NO prior preclinical evidence supporting the candidate
+#     in AML.
+#   - The system uses only its internal knowledge — no DepMap dependency
+#     scores, no genomic priors, no human expert feedback.
+#
+# We additionally tell models to NAME the specific drug (INN, brand, or
+# research code) rather than a drug class so the gold-set matcher can
+# score recall against named entities.
 _PAPER_AML_GOAL = (
-    "Identify FDA-approved drugs that could be repurposed as therapeutic "
-    "candidates for acute myeloid leukemia (AML). For each hypothesis, "
-    "name the specific approved drug (its INN or brand name), describe "
-    "the molecular mechanism by which it would act against AML blasts or "
-    "leukemic stem cells, and propose a concrete in vitro or in vivo "
-    "experiment to test it."
+    "Produce a ranked list of drug repurposing candidates for acute "
+    "myeloid leukemia (AML), strictly under the following constraints:\n\n"
+    "(1) Each candidate must NOT have prior published evidence of being "
+    "repurposed for AML, and there must be no preclinical studies in AML "
+    "for the proposed compound at the time of writing.\n"
+    "(2) Use only your internal knowledge. Do NOT assume access to DepMap "
+    "dependency scores, gene-essentiality datasets, transcriptomic "
+    "screens, or human expert curation. No external inputs.\n"
+    "(3) Name the specific compound (INN, brand name, or research-code "
+    "alias) — do not propose generic drug classes (e.g. \"MEK inhibitors\")."
+    " Cover diverse mechanisms across the ranked list (avoid 5 ideas all "
+    "hitting the same pathway).\n\n"
+    "For each candidate hypothesis, give: the named compound, the "
+    "molecular mechanism by which it would act against AML blasts or "
+    "leukemic stem cells (with the specific target/pathway), the "
+    "scientific reasoning that licenses the AML hypothesis even though "
+    "no AML-specific evidence currently exists, and one concrete in vitro "
+    "or in vivo experiment that would falsify the hypothesis."
 )
 
 
@@ -152,32 +171,34 @@ PRESETS: dict[str, BenchPreset] = {
     "paper-aml": BenchPreset(
         name="paper-aml",
         description=(
-            "Reproduce the paper's AML drug-repurposing benchmark. Each "
-            "candidate model proposes FDA-approved drugs that could be "
-            "repurposed for AML; we additionally score recall against the "
-            "5 drugs the original paper surfaced (Binimetinib, Pacritinib, "
-            "Cerivastatin, Pravastatin, Dimethyl fumarate). Uses the same "
-            "candidate set + judge as the `paper` preset."
+            "Reproduce the paper's AML repurposing benchmark under its "
+            "strict methodology: candidates with NO prior repurposing "
+            "evidence and NO preclinical evidence in AML, no external "
+            "inputs (DepMap, expert feedback). Recall is scored against "
+            "the top-3 candidates the paper surfaced: Nanvuranlat, KIRA6, "
+            "and Leflunomide. Uses the same candidate set + judge as the "
+            "`paper` preset."
         ),
         candidates=_PAPER_CANDIDATES,
         suggested_judge="openrouter:google/gemini-3-flash-preview",
         default_goal=_PAPER_AML_GOAL,
-        goldset=AML_REPURPOSING_PAPER_5,
+        goldset=AML_REPURPOSING_PAPER_TOP3,
     ),
     "paper-aml-vs-raw": BenchPreset(
         name="paper-aml-vs-raw",
         description=(
-            "AML drug-repurposing benchmark for the paper's baseline models, "
-            "but each model runs TWICE: once through the full co-scientist "
-            "Generation pipeline (literature tools + tool loop + dedup) and "
-            "once as a single raw LM call. Isolates how much of the system's "
+            "AML repurposing benchmark for the paper's baseline models, "
+            "under the strict no-prior-evidence methodology — each model "
+            "runs TWICE: once through the full co-scientist Generation "
+            "pipeline (literature tools + tool loop + dedup) and once as a "
+            "single raw LM call. Isolates how much of the system's "
             "performance comes from the multi-agent harness vs the model "
-            "itself. Same gold set (5 drugs from the paper)."
+            "itself. Same top-3 gold set as `paper-aml`."
         ),
         candidates=_vs_raw(_PAPER_CANDIDATES),
         suggested_judge="openrouter:google/gemini-3-flash-preview",
         default_goal=_PAPER_AML_GOAL,
-        goldset=AML_REPURPOSING_PAPER_5,
+        goldset=AML_REPURPOSING_PAPER_TOP3,
     ),
     "frontier-aml-vs-raw": BenchPreset(
         name="frontier-aml-vs-raw",
@@ -190,7 +211,7 @@ PRESETS: dict[str, BenchPreset] = {
         candidates=_vs_raw(_FRONTIER_CANDIDATES),
         suggested_judge="openrouter:google/gemini-3-flash-preview",
         default_goal=_PAPER_AML_GOAL,
-        goldset=AML_REPURPOSING_PAPER_5,
+        goldset=AML_REPURPOSING_PAPER_TOP3,
     ),
 }
 

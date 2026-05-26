@@ -255,23 +255,64 @@ running with a different judge family if you want to control for that.
 ### AML drug-repurposing benchmark (gold-set scoring)
 
 `co-scientist bench --preset paper-aml` runs every candidate against the
-paper's AML drug-repurposing goal and additionally scores **recall**
-against the 5 drugs the paper surfaced (Binimetinib, Pacritinib,
-Cerivastatin, Pravastatin, Dimethyl fumarate, plus common aliases like
-DMF, BG-12, MEK162, Mektovi, Pravachol). Matching is whole-token,
-case-insensitive, and looks at every searched field of every hypothesis
-(title / summary / full_text / `entities` / citation excerpts).
+paper's AML drug-repurposing goal and scores **recall** against a curated
+answer key from the Co-Scientist paper. The paper actually reports
+**two** AML repurposing results, and we keep both gold sets so you can
+score against either; past bench artifacts record which set they used
+in `bench_runs.goldset_label`.
+
+| label                              | size | what it is |
+| ---                                | --- | --- |
+| `aml-repurposing-paper-top3` (default for `paper-aml*`) | 3 | The top-3 of the paper's *ranked* list under the **strict methodology**: candidates with no prior published AML repurposing, no prior preclinical evidence in AML, and no external inputs (no DepMap dependency scores, no expert curation). → **Nanvuranlat (JPH-203 / KYT-0353), KIRA6, Leflunomide (Arava / HWA-486 / Teriflunomide / Aubagio)** |
+| `aml-repurposing-paper-5`          | 5 | The broader 5-drug list referenced in the paper's main text. Includes well-known candidates, some with prior preclinical AML evidence. → **Binimetinib (MEK162 / Mektovi), Pacritinib (SB1518 / Vonjo), Cerivastatin (Baycol), Pravastatin (Pravachol), Dimethyl fumarate (DMF / BG-12 / Tecfidera)** |
+
+The `paper-aml` preset uses the strict top-3 by default. Swap with `--goldset`:
 
 ```bash
-co-scientist bench --preset paper-aml \
-  --n 3 --matches 2 \
-  --budget-per-candidate 1.5 --judge-budget 0.50
+# Strict top-3 methodology (default)
+co-scientist bench --preset paper-aml --n 5 --matches 2
+
+# Broader 5-drug list (the earlier vintage)
+co-scientist bench --preset paper-aml --goldset aml-repurposing-paper-5 \
+  --n 5 --matches 2
+
+# Disable gold-set scoring entirely for a paper-aml run
+co-scientist bench --preset paper-aml --goldset none
 ```
 
-Note: with small `--n` the chance of any one model hitting any one of
-the 5 specific drugs by luck is low. The Co-Scientist paper surfaced
-these after running 15 expert-curated goals; for an apples-to-apples
-comparison raise `--n` to 5+ and run multiple seeds.
+The matcher is whole-token, case-insensitive, and looks at every searched
+field of every hypothesis (title / summary / full_text / `entities` /
+citation excerpts). Drug **class** mentions (e.g. "DHODH inhibitor")
+do **not** count — the candidate has to name the actual compound
+(or one of its registered aliases).
+
+The strict top-3 goal asks for:
+> *"a ranked list of drug repurposing candidates for AML; each candidate must have no prior published AML repurposing, no prior preclinical evidence in AML; use only internal knowledge — no DepMap scores, no expert curation."*
+
+This makes the bench harder than naming any FDA-approved drug — the model
+has to **not** rely on already-known AML literature.
+
+#### Where past results live
+
+```bash
+# Inspect every AML bench you've run, with the gold set it scored against:
+sqlite3 data/co_scientist.db <<'SQL'
+SELECT id, created_at, goldset_label,
+       (SELECT COUNT(*) FROM bench_candidates WHERE bench_id=br.id) AS n_cand
+  FROM bench_runs br
+ WHERE research_goal LIKE '%AML%' OR research_goal LIKE '%leukemia%'
+ ORDER BY created_at DESC;
+SQL
+```
+
+Per-candidate hits + per-entity provenance (which alias matched, which
+hypothesis, which field) live in `bench_candidates.gold_hit_names` and
+the bench JSON artifact under
+`data/artifacts/<session>/bench/<bench_id>.json`.
+
+Note: with small `--n`, recall against either gold set is sensitive to
+luck — the paper surfaced these after running 15 expert-curated goals.
+For comparable numbers raise `--n` to 5+ and run multiple seeds.
 
 ### Custom candidates
 

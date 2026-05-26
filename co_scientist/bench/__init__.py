@@ -19,11 +19,20 @@ share Elo state with regular sessions. They reuse the underlying
 GenerationAgent and the Elo math.
 """
 
-from .goldset import GOLDSETS, GoldEntity, GoldSet, HitRecord
+from .goldset import (
+    AML_REPURPOSING_PAPER_5,
+    AML_REPURPOSING_PAPER_TOP3,
+    GOLDSETS,
+    GoldEntity,
+    GoldSet,
+    HitRecord,
+)
 from .presets import PRESETS, get_preset
 from .runner import BenchCandidate, BenchOutcome, run_bench
 
 __all__ = [
+    "AML_REPURPOSING_PAPER_5",
+    "AML_REPURPOSING_PAPER_TOP3",
     "GOLDSETS",
     "PRESETS",
     "BenchCandidate",
