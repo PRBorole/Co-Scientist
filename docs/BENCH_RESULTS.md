@@ -19,45 +19,34 @@ _Auto-generated from `data/co_scientist.db` by_ _`python scripts/build_bench_rep
 
 ## Headline findings
 
-Across the AML drug-repurposing benches run on this codebase. The `*-vs-raw` benches below were re-run after the Generation pipeline was fixed (see *Pipeline reliability fixes* at the end) — earlier numbers in git history predate those fixes.
+From the two AML `*-vs-raw` benches, where each model runs the same goal twice: **direct** (a single LM call, no harness) and **pipeline** (the full Generation harness — literature tools + tool loop + dedup). Within each bench both modes share one Elo pool, so the direct→pipeline change is a clean read on what the harness does to that model's hypotheses.
 
-### 1. The strict no-prior-evidence prompt is genuinely hard
+### 1. The harness's effect splits by model family
 
-Models default to well-known AML repurposing candidates that **violate** the no-prior-evidence constraint. Across the 14 hypotheses produced under the strict prompt in the two vs-raw benches, **none** matched the strict top-3 (Nanvuranlat, KIRA6, Leflunomide) and **none** matched the broader 5-drug list. The models instead surface plausible-but-unscored candidates (Nitazoxanide, ND-646, Meldonium, Pitavastatin, Belapectin, …). Reproducing the paper's specific picks needs more breadth than a single Generation call per candidate.
+Adding the harness helps Claude and o1, is roughly flat for GPT-5, and hurts both Gemini models:
 
-### 2. Pipeline-vs-raw: the harness now helps the strongest models
+| model | direct (no harness) | pipeline (harness) | Δ Elo | effect |
+| --- | --- | --- | --- | --- |
+| claude-haiku-4.5 | 1-9 (1120) | 10-0 (1300) | **+180** | strong lift |
+| claude-opus-4.7 | 10-4 (1270) | 14-0 (1367) | **+97** | strong lift |
+| openai-o1 | 4-6 (1178) | 6-4 (1221) | +43 | lift |
+| gpt-5 | 5-9 (1146) | 6-8 (1172) | +25 | ~flat |
+| gemini-3-flash | 2-12 (1110) | 0-14 (1074) | −37 | regression |
+| gemini-3-pro | 12-2 (1275) | 7-7 (1186) | −89 | regression |
 
-The `*-vs-raw` presets run each candidate model **twice** — once through the full Generation pipeline (literature tools + tool loop + dedup), once as a single forced-tool LM call. After the pipeline fixes, **the two strongest models win decisively in pipeline mode and beat their own raw call**:
+_(Δ Elo is within-bench: haiku/o1 sit in the paper-baseline pool, opus/gpt-5/gemini-3 in the frontier pool — compare each model to itself, not across rows.)_
 
-| model | pipeline | direct | winner |
-| --- | --- | --- | --- |
-| claude-opus-4.7 | **14-0 (Elo 1367)** | 10-4 (1270) | pipeline (decisive) |
-| claude-haiku-4.5 | **10-0 (Elo 1300)** | 1-9 (1120) | pipeline (decisive) |
-| openai-o1 | 6-4 (1221) | 4-6 (1178) | pipeline |
-| gpt-5 | 6-8 (1172) | 5-9 (1146) | ~tie (slight pipeline) |
-| gemini-3-pro | 7-7 (1186) | 12-2 (1275) | direct |
-| gemini-3-flash | 0-14 (1074) | 2-12 (1110) | ~tie (both weak) |
+The pattern: Claude and o1 turn the literature tools into tournament-winning hypotheses — haiku and opus go from losing records raw to near-perfect in pipeline. Gemini does the opposite: it scores well raw but the tool loop drags its rated hypothesis down. So the harness is not a flat win — its value tracks the model.
 
-This **reverses** the pre-fix finding ("direct beats pipeline for every model"). The reversal is concentrated in the strongest models: opus and haiku use the literature tools productively and their pipeline hypotheses dominate the tournament. Mid-tier Gemini still does better raw — the tool loop adds cost without improving its rated hypothesis. So the harness's value-add scales with base model strength, rather than being a flat tax.
+### 2. The strict no-prior-evidence prompt is hard for every model
 
-### 3. Frontier pipelines no longer fail
-
-Pre-fix, `frontier-aml-vs-raw` had **all 4 pipeline modes produce zero hypotheses** (budget burn + tool-loop exhaustion + truncated tool calls). Post-fix, **all 8 frontier candidates (4 pipeline + 4 direct) produced a hypothesis** and the bench ran 56 matches. The one remaining pipeline miss across both vs-raw benches was `gemini-2-pro[pipe]`, where OpenRouter returned an empty completion on the forced final call (a flaky provider response, not a harness failure).
-
-### Pipeline reliability fixes (why these numbers differ from git history)
-
-Four changes turned the frontier pipeline from 0/4 to 4/4:
-
-1. **Empty-search stopping rule** in the Generation prompt — an empty literature search now reads as positive evidence of novelty (a reason to commit), not a reason to keep searching.
-2. **Force `record_hypothesis` on the final tool-loop iteration** — the model must commit on its last turn instead of spending it on another search.
-3. **`max_output_tokens` 4096 → 8192** for Generation — verbose models (opus, gpt-5) were overrunning the old cap mid-JSON, so the tool-call arguments were truncated and unparseable.
-4. **`--budget-per-candidate` default 2.0 → 3.0** — opus needed more headroom than the old cap allowed.
+Across the 14 hypotheses produced, **none** hit the paper's strict top-3 (Nanvuranlat, KIRA6, Leflunomide) or the broader 5-drug list, in either mode. Models surface plausible-but-unscored candidates (Nitazoxanide, ND-646, Meldonium, Pitavastatin, Belapectin, …) rather than the paper's picks. Recall needs more breadth than one Generation call per candidate — multiple seeds (`--n 5+`) and iterative refinement.
 
 ### Practical implications
 
-- On this hard task, **the pipeline is now worth its cost for strong   models** (opus, haiku, o1) — it produces tournament-winning   hypotheses that beat the same model's raw call. For mid-tier   models, `--candidate model@direct` remains the cheaper, equal-or-  better baseline.
-- Gold-set recall is still 0 on the strict top-3. Reproducing the   paper's specific picks needs **more breadth** — multiple seeds   (`--n 5+`) and the full system's iterative refinement, not one   Generation call per candidate.
-- Budget caps still matter for expensive models: opus pipeline spent   ~$0.80 of its $3 cap per candidate on this prompt.
+- **Match the mode to the model.** Run Claude / o1 through the   pipeline; for Gemini, `--candidate model@direct` is cheaper and   scores better on this task.
+- **Strong base model + harness compounds.** The biggest gains   (haiku +180, opus +97) come from models that use the tools well; a   weaker fit (Gemini) loses ground.
+- Expensive models still fit the budget: opus pipeline spent ~$0.80   of its $3/candidate cap on this prompt.
 
 
 ## Index of recorded benches
