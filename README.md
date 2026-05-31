@@ -130,16 +130,26 @@ co-scientist tools list       # show every registered tool the agents can call
 
 ## LLM provider
 
-The agents are provider-agnostic — every agent talks to one LLM provider per session, picked in [`config/default.toml`](config/default.toml) (override with your own `co-scientist.toml`). Any of the providers below works; pick whichever you have a key for. Set `provider` and the per-agent `[models]` to your chosen vendor's model ids:
+The agents are provider-agnostic — every agent talks to one LLM provider per session, picked in [`config/default.toml`](config/default.toml) (override with your own `co-scientist.toml`). Any of the providers below works; pick whichever you have a key for.
+
+Config is **deep-merged** over [`config/default.toml`](config/default.toml), whose `[models]` defaults are Claude model ids. So if you switch `provider` away from `anthropic`, override **every** key in `[models]` — any key you leave out keeps its Claude default and will be sent to your new provider, which will reject it. A complete OpenAI example:
 
 ```toml
 [llm]
 provider = "openai"          # or anthropic / openrouter / gemini / groq / together / mistral / ollama / openai_compatible
 
 [models]
-generation = "gpt-5"         # use whatever model ids your provider exposes
-reflection = "gpt-5"
-# ... (see config/default.toml for the full per-agent list)
+parse_goal          = "gpt-4o-mini"
+generation          = "gpt-5"
+reflection          = "gpt-5"
+evolution           = "gpt-5"
+ranking_pairwise    = "gpt-4o"
+ranking_debate      = "gpt-4o"
+ranking_priority    = "gpt-5"
+metareview_feedback = "gpt-4o"
+metareview_final    = "gpt-5"
+classifier          = "gpt-4o-mini"
+judge               = "gpt-4o"
 ```
 
 | provider              | Endpoint                                                | Required key            | Example models                                            |
