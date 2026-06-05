@@ -3,12 +3,12 @@
 # Secrets: env vars only (ANTHROPIC_API_KEY, VOYAGE_API_KEY, TAVILY_API_KEY, ...)
 
 [run]
-concurrency = 4
-max_ideas = 60
-max_matches_per_idea = 12
-wall_clock_seconds = 7200            # 2h default
+concurrency = 1
+max_ideas = 2
+max_matches_per_idea = 1
+wall_clock_seconds = 300            # 2h default
 budget_tokens = 5_000_000
-budget_usd = 25.0
+budget_usd = 5.0
 
 [storage]
 data_dir = "./data"
@@ -56,17 +56,28 @@ proximity  = 0.02
 reserve    = 0.08
 
 [models]
-parse_goal          = "claude-sonnet-4-6"
-generation          = "claude-opus-4-7"
-reflection          = "claude-opus-4-7"
-evolution           = "claude-opus-4-7"
-ranking_pairwise    = "claude-sonnet-4-6"
-ranking_debate      = "claude-sonnet-4-6"
-ranking_priority    = "claude-opus-4-7"
-metareview_feedback = "claude-sonnet-4-6"
-metareview_final    = "claude-opus-4-7"
-classifier          = "claude-haiku-4-5-20251001"
-judge               = "claude-sonnet-4-6"
+# parse_goal          = "claude-sonnet-4-6"
+# generation          = "claude-opus-4-7"
+# reflection          = "claude-opus-4-7"
+# evolution           = "claude-opus-4-7"
+# ranking_pairwise    = "claude-sonnet-4-6"
+# ranking_debate      = "claude-sonnet-4-6"
+# ranking_priority    = "claude-opus-4-7"
+# metareview_feedback = "claude-sonnet-4-6"
+# metareview_final    = "claude-opus-4-7"
+# classifier          = "claude-haiku-4-5-20251001"
+# judge               = "claude-sonnet-4-6"
+parse_goal          = "openrouter/free"
+generation          = "openrouter/free"
+reflection          = "openrouter/free"
+evolution           = "openrouter/free"
+ranking_pairwise    = "openrouter/free"
+ranking_debate      = "openrouter/free"
+ranking_priority    = "openrouter/free"
+metareview_feedback = "openrouter/free"
+metareview_final    = "openrouter/free"
+classifier          = "openrouter/free"
+judge               = "openrouter/free"
 
 [thinking]
 # per agent.mode budgets; 0 = disabled
@@ -153,7 +164,7 @@ classifier_warn_categories = ["dual_use_bio"]
 # After choosing a provider, set the entries in [models] to model ids it
 # can serve.
 [llm]
-provider = "anthropic"
+provider = "openrouter"
 
 # For provider = "openai" / "openai_compatible" / any preset above: this
 # overrides the preset's base_url (rarely needed).
